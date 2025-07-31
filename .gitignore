@@ -25,3 +25,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# TD Debug backup directory
+td_debug/Backup/

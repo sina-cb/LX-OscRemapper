@@ -36,7 +36,16 @@ public class OscRemapperPlugin implements LXStudio.Plugin {
     new TriggerParameter("Set Up Now", this::runSetup)
       .setDescription("Add an OSC output and add global modulators for brightness and tempo sync");
 
+  public final TriggerParameter refreshConfig =
+    new TriggerParameter("Refresh Config", this::refreshConfiguration)
+      .setDescription("Reload configuration from YAML file and re-setup outputs");
+
+  public final BooleanParameter loggingEnabled = 
+    new BooleanParameter("Enable Logs", true)
+      .setDescription("Enable/disable plugin logging");
+
   private final LX lx;
+  private final Path configPath;
   private OscRemapperTransmissionListener transmissionListener;
   private RemapperConfig config;
   
@@ -50,6 +59,7 @@ public class OscRemapperPlugin implements LXStudio.Plugin {
 
   public OscRemapperPlugin(LX lx, Path configPath) {
     this.lx = lx;
+    this.configPath = configPath;
     LOG.log("OscRemapperPlugin(LX) constructor called - version: " + loadVersion());
     LOG.log("Using config path: " + configPath);
     
@@ -67,6 +77,11 @@ public class OscRemapperPlugin implements LXStudio.Plugin {
       } else {
         stopOscCapture();
       }
+    });
+    
+    // Listen for logging parameter changes
+    this.loggingEnabled.addListener(p -> {
+      LOG.setEnabled(this.loggingEnabled.isOn());
     });
   }
 
@@ -199,6 +214,51 @@ public class OscRemapperPlugin implements LXStudio.Plugin {
     }
     
     LOG.log("[OscRemapper] Setup complete - " + remoteOutputs.size() + " outputs active");
+  }
+  
+  /**
+   * Refresh configuration from YAML file and re-setup all outputs
+   */
+  private void refreshConfiguration() {
+    LOG.log("🔄 Refreshing configuration...");
+    
+    try {
+      // Stop current OSC capture if active
+      if (oscCaptureEnabled.isOn()) {
+        stopOscCapture();
+      }
+      
+      // Clear existing outputs
+      for (LXOscConnection.Output output : remoteOutputs.values()) {
+        if (output != null) {
+          try {
+            output.active.setValue(false);
+            lx.engine.osc.removeOutput(output);
+            LOG.log("Removed existing output: " + output.host.getString() + ":" + output.port.getValuei());
+          } catch (Exception e) {
+            LOG.error(e, "Error removing existing output");
+          }
+        }
+      }
+      remoteOutputs.clear();
+      
+      // Reload configuration
+      this.config = ConfigLoader.loadConfig(configPath);
+      LOG.log("✅ Reloaded configuration with " + this.config.getRemotes().size() + " remotes");
+      
+      // Re-setup outputs
+      runSetup();
+      
+      // Restart OSC capture if it was enabled
+      if (oscCaptureEnabled.isOn()) {
+        startOscCapture();
+      }
+      
+      LOG.log("🎯 Configuration refresh complete!");
+      
+    } catch (Exception e) {
+      LOG.error(e, "Failed to refresh configuration");
+    }
   }
   
   /**

@@ -18,18 +18,33 @@ public class UIOscRemapperPlugin extends UICollapsibleSection {
     addChildren(
       new UIButton(getContentWidth(), 16, plugin.setUpNow)
         .setBorderRounding(4),
+      
+      new UIButton(getContentWidth(), 16, plugin.refreshConfig)
+        .setBorderRounding(4),
         
-              // OSC Message Capture section
-        new UICollapsibleSection(ui, 0, 0, getContentWidth(), 0) {{
-          setTitle("OSC CAPTURE");
-          setLayout(Layout.VERTICAL, 2);
-          setPadding(4, 0);
-          
-          addChildren(
-            new UIButton(getContentWidth(), 16, plugin.oscCaptureEnabled)
-              .setBorderRounding(4)
-          );
-        }}
+      // OSC Message Capture section
+      new UICollapsibleSection(ui, 0, 0, getContentWidth(), 0) {{
+        setTitle("OSC CAPTURE");
+        setLayout(Layout.VERTICAL, 2);
+        setPadding(4, 0);
+        
+        addChildren(
+          new UIButton(getContentWidth(), 16, plugin.oscCaptureEnabled)
+            .setBorderRounding(4)
+        );
+      }},
+      
+      // Logging Controls section
+      new UICollapsibleSection(ui, 0, 0, getContentWidth(), 0) {{
+        setTitle("LOGGING");
+        setLayout(Layout.VERTICAL, 2);
+        setPadding(4, 0);
+        
+        addChildren(
+          new UIButton(getContentWidth(), 16, plugin.loggingEnabled)
+            .setBorderRounding(4)
+        );
+      }}
     );
   }
 
