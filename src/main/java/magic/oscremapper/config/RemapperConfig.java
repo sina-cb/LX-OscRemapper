@@ -1,5 +1,6 @@
 package magic.oscremapper.config;
 
+import magic.oscremapper.LOG;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -30,6 +31,7 @@ public class RemapperConfig {
     private String ip;
     private int port;
     private Map<String, List<String>> mappings = new HashMap<>();
+    private boolean isPassthrough = false; // True if this remote has identity mappings
 
     public String getName() {
       return name;
@@ -61,6 +63,69 @@ public class RemapperConfig {
 
     public void setMappings(Map<String, List<String>> mappings) {
       this.mappings = mappings;
+      // Auto-detect if this remote is passthrough (identity mappings)
+      detectPassthrough();
+    }
+
+    public boolean isPassthrough() {
+      return isPassthrough;
+    }
+
+    public void setPassthrough(boolean passthrough) {
+      this.isPassthrough = passthrough;
+    }
+
+    /**
+     * Add a mapping and update passthrough detection
+     */
+    public void addMapping(String source, List<String> destinations) {
+      mappings.put(source, destinations);
+      // Re-evaluate passthrough status after each mapping is added
+      detectPassthrough();
+    }
+
+    /**
+     * Detect if this remote is passthrough (identity mappings)
+     * A remote is passthrough if all mappings map input to the same output
+     */
+    private void detectPassthrough() {
+      LOG.log("🔍 Checking passthrough for remote: " + name);
+      isPassthrough = true;
+      
+      if (mappings.isEmpty()) {
+        LOG.log("❌ Remote " + name + " has no mappings - not passthrough");
+        isPassthrough = false;
+        return;
+      }
+      
+      for (Map.Entry<String, List<String>> entry : mappings.entrySet()) {
+        String sourcePattern = entry.getKey();
+        List<String> destinations = entry.getValue();
+        
+        LOG.log("   Checking: " + sourcePattern + " → " + destinations);
+        
+        // For passthrough, we expect exactly one destination that matches the source
+        if (destinations.size() != 1) {
+          LOG.log("❌ Multiple destinations (" + destinations.size() + ") - not passthrough");
+          isPassthrough = false;
+          break;
+        }
+        
+        String destination = destinations.get(0);
+        if (!destination.equals(sourcePattern)) {
+          LOG.log("❌ " + sourcePattern + " ≠ " + destination + " - not passthrough");
+          isPassthrough = false;
+          break;
+        }
+        
+        LOG.log("✅ " + sourcePattern + " == " + destination + " - identity mapping");
+      }
+      
+      if (isPassthrough) {
+        LOG.log("🎯 Remote '" + name + "' detected as PASSTHROUGH - will skip OSC processing");
+      } else {
+        LOG.log("📡 Remote '" + name + "' is NOT passthrough - will process OSC messages");
+      }
     }
 
     /**

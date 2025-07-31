@@ -178,8 +178,15 @@ public class ConfigLoader {
             LOG.log("Mapping: " + source + " -> " + targetStr);
           }
           
-          remote.getMappings().put(source, destinations);
+          // Validate wildcard mappings
+          if (!validateWildcardMapping(source, destinations)) {
+            LOG.error("Invalid wildcard mapping for '" + source + "' - skipping");
+            continue; // Skip this invalid mapping
+          }
+          
+          remote.addMapping(source, destinations);
         }
+        
       } else {
         LOG.log("No mappings found or mappings not a Map");
       }
@@ -239,5 +246,33 @@ public class ConfigLoader {
     config.setRemotes(remotes);
     
     return config;
+  }
+  
+  /**
+   * Validate wildcard mappings according to plugin rules
+   * @param source Source OSC pattern
+   * @param destinations List of destination patterns
+   * @return true if valid, false if invalid
+   */
+  private static boolean validateWildcardMapping(String source, List<String> destinations) {
+    // Check if source is a wildcard pattern
+    if (source.endsWith("/*")) {
+      // Rule: Wildcard sources don't support multiple destinations
+      if (destinations.size() > 1) {
+        LOG.error("Wildcard source '" + source + "' cannot have multiple destinations (" + destinations.size() + " found)");
+        LOG.error("Wildcard mappings must be 1:1. Found destinations: " + destinations);
+        return false;
+      }
+      
+      // Rule: If source is wildcard, destination must also be wildcard
+      String destination = destinations.get(0);
+      if (!destination.endsWith("/*")) {
+        LOG.error("Wildcard source '" + source + "' must map to wildcard destination, found: '" + destination + "'");
+        LOG.error("Use format: '/lx/tempo/*' -> ['/remote/tempo/*']");
+        return false;
+      }
+    }
+    
+    return true; // Valid mapping
   }
 }

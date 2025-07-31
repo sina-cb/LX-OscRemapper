@@ -122,6 +122,11 @@ public class OscRemapperPlugin implements LXStudio.Plugin {
           
           // Process each configured remote
           for (RemapperConfig.Remote remote : config.getRemotes()) {
+            // Skip passthrough remotes - let OSC output filters handle them naturally
+            if (remote.isPassthrough()) {
+              continue; // OSC output filter will route these messages automatically
+            }
+            
             // Check if this remote should handle this address
             if (remote.shouldHandleAddress(originalAddress)) {
               // Get the remapped addresses (can be multiple destinations)
