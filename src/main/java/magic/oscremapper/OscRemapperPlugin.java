@@ -41,7 +41,7 @@ public class OscRemapperPlugin implements LXStudio.Plugin {
       .setDescription("Reload configuration from YAML file and re-setup outputs");
 
   public final BooleanParameter loggingEnabled = 
-    new BooleanParameter("Enable Logs", true)
+    new BooleanParameter("Enable Logs", false)
       .setDescription("Enable/disable plugin logging");
 
   private final LX lx;
