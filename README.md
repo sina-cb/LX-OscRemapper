@@ -2,6 +2,14 @@
 
 A comprehensive OSC (Open Sound Control) remapping and forwarding plugin for LX Studio/Chromatik that intelligently routes OSC messages to multiple remote applications with custom address mappings.
 
+## Attribution & Inspiration
+
+This plugin was heavily inspired by and built upon the excellent work from the **Beyond Plugin** by [jkbelcher](https://github.com/jkbelcher):
+
+🎯 **[Beyond Plugin Repository](https://github.com/jkbelcher/Beyond)**
+
+We extensively used their code architecture, plugin structure, and LX Studio integration patterns as the foundation for creating the OscRemapper plugin. The Beyond plugin provided invaluable guidance on proper LX Studio plugin development, UI integration, and Maven configuration. Our sincere thanks to jkbelcher and the Beyond project contributors for their open-source contribution to the LX Studio ecosystem!
+
 ## What is OSC Remapping?
 
 OSC Remapping allows you to:
