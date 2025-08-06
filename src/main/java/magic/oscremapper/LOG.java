@@ -8,7 +8,7 @@ import heronarts.lx.LX;
 public class LOG {
 
   private static final String PREFIX = "[OscRemapper] ";
-  private static boolean loggingEnabled = true;
+  private static boolean loggingEnabled = false;
 
   /**
    * Set whether logging is enabled
@@ -30,6 +30,13 @@ public class LOG {
     if (loggingEnabled) {
       LX.log(PREFIX + message);
     }
+  }
+
+  /**
+   * Log startup/important messages that should always be shown
+   */
+  public static void startup(String message) {
+    LX.log(PREFIX + message);
   }
 
   public static void error(String message) {

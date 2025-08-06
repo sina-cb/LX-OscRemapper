@@ -23,6 +23,7 @@ OSC Remapping allows you to:
 
 Assuming the `LX-OscRemapper` and `LXStudio-TE` are cloned in `~/workspace/{LX-OscRemapper | LXStudio-TE}`
 ```bash
+cd /Users/sinas/workspace/LX && mvn compile && mvn install -DskipTests # if LX engine was changed
 cd ~/workspace/LX-OscRemapper && mvn compile && mvn install -DskipTests
 cd ~/workspace/LXStudio-TE/te-app && mvn package -DskipTests
 

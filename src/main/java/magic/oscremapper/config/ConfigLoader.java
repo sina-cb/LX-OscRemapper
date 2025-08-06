@@ -9,6 +9,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -31,7 +32,7 @@ public class ConfigLoader {
    */
   public static RemapperConfig loadConfig(Path configPath) {
     try {
-      LOG.log("Loading OSC Remapper config from: " + configPath.toAbsolutePath());
+      LOG.startup("Loading OSC Remapper config from: " + configPath.toAbsolutePath());
       
       if (!Files.exists(configPath)) {
         LOG.error("Config file not found: " + configPath.toAbsolutePath());
@@ -40,7 +41,7 @@ public class ConfigLoader {
       
       try (InputStream inputStream = new FileInputStream(configPath.toFile())) {
         RemapperConfig config = parseYamlConfig(inputStream);
-        LOG.log("Successfully parsed YAML config with " + config.getRemotes().size() + " remotes");
+        LOG.startup("Successfully parsed YAML config with " + config.getDestinations().size() + " destinations and " + config.getRemappings().size() + " remappings");
         return config;
       }
       
@@ -68,137 +69,144 @@ public class ConfigLoader {
     }
     
     RemapperConfig config = new RemapperConfig();
-    List<RemapperConfig.Remote> remotes = new ArrayList<>();
+    List<RemapperConfig.Destination> destinations = new ArrayList<>();
+    Map<String, List<String>> remappings = new HashMap<>();
     
     if (data instanceof Map) {
       @SuppressWarnings("unchecked")
       Map<String, Object> rootMap = (Map<String, Object>) data;
       LOG.log("YAML root keys: " + rootMap.keySet());
       
-      // Handle the remotes array format
-      Object remotesData = rootMap.get("remotes");
-      LOG.log("Remotes data type: " + (remotesData != null ? remotesData.getClass().getSimpleName() : "null"));
+      // Handle destinations array format
+      Object destinationsData = rootMap.get("destinations");
+      LOG.log("Destinations data type: " + (destinationsData != null ? destinationsData.getClass().getSimpleName() : "null"));
       
-      if (remotesData instanceof List) {
+      if (destinationsData instanceof List) {
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> remotesList = (List<Map<String, Object>>) remotesData;
-        LOG.log("Remotes list size: " + remotesList.size());
+        List<Map<String, Object>> destinationsList = (List<Map<String, Object>>) destinationsData;
+        LOG.log("Destinations list size: " + destinationsList.size());
         
-        for (int i = 0; i < remotesList.size(); i++) {
-          Map<String, Object> remoteMap = remotesList.get(i);
-          LOG.log("Processing remote " + i + ": " + remoteMap.keySet());
-          RemapperConfig.Remote remote = parseRemote(remoteMap);
-          if (remote != null) {
-            remotes.add(remote);
-            LOG.log("Successfully parsed remote: " + remote.getName());
+        for (int i = 0; i < destinationsList.size(); i++) {
+          Map<String, Object> destinationMap = destinationsList.get(i);
+          LOG.log("Processing destination " + i + ": " + destinationMap.keySet());
+          RemapperConfig.Destination destination = parseDestination(destinationMap);
+          if (destination != null) {
+            destinations.add(destination);
+            LOG.log("Successfully parsed destination: " + destination.getName());
           } else {
-            LOG.error("Failed to parse remote " + i);
+            LOG.error("Failed to parse destination " + i);
           }
         }
-      } else {
-        LOG.error("Config file must contain 'remotes:' array. Found: " + (remotesData != null ? remotesData.getClass().getSimpleName() : "null"));
-        if (remotesData != null) {
-          LOG.error("Remotes data content: " + remotesData.toString());
-        }
       }
-    } else {
-      LOG.error("YAML root is not a Map. Found: " + data.getClass().getSimpleName());
-    }
-    
-    config.setRemotes(remotes);
-    LOG.log("Loaded " + remotes.size() + " remote configurations");
-    
-    for (RemapperConfig.Remote remote : remotes) {
-      LOG.log("");
-      LOG.log("remote: " + remote.getName());
-      for (Map.Entry<String, List<String>> mapping : remote.getMappings().entrySet()) {
-        String source = mapping.getKey();
-        List<String> destinations = mapping.getValue();
-        if (destinations.size() == 1) {
-          LOG.log("  mappings -> " + source + " : " + destinations.get(0));
-        } else {
-          LOG.log("  mappings -> " + source + " : " + destinations);
-        }
-      }
-      LOG.log("  longest_prefix_filter -> " + remote.calculateFilterPrefix());
-      LOG.log("");
-    }
-    
-    return config;
-  }
-  
-  /**
-   * Parse a single remote configuration from YAML map
-   */
-  private static RemapperConfig.Remote parseRemote(Map<String, Object> remoteMap) {
-    try {
-      LOG.log("Parsing remote: " + remoteMap.keySet());
-      RemapperConfig.Remote remote = new RemapperConfig.Remote();
       
-      // Set basic properties
-      String name = getString(remoteMap, "name", "Unknown");
-      String ip = getString(remoteMap, "ip", "127.0.0.1");
-      int port = getInt(remoteMap, "port", 7000);
+      // Handle remappings section
+      Object remappingsData = rootMap.get("remappings");
+      LOG.log("Remappings data type: " + (remappingsData != null ? remappingsData.getClass().getSimpleName() : "null"));
       
-      remote.setName(name);
-      remote.setIp(ip);
-      remote.setPort(port);
-      
-      LOG.log("Remote basic properties: name=" + name + ", ip=" + ip + ", port=" + port);
-      
-      // Parse mappings - supports both single strings and arrays
-      Object mappingsData = remoteMap.get("mappings");
-      LOG.log("Mappings data type: " + (mappingsData != null ? mappingsData.getClass().getSimpleName() : "null"));
-      
-      if (mappingsData instanceof Map) {
+      if (remappingsData instanceof Map) {
         @SuppressWarnings("unchecked")
-        Map<String, Object> mappingsMap = (Map<String, Object>) mappingsData;
-        LOG.log("Found " + mappingsMap.size() + " mapping entries");
+        Map<String, Object> remappingsMap = (Map<String, Object>) remappingsData;
+        LOG.log("Found " + remappingsMap.size() + " remapping entries");
         
-        for (Map.Entry<String, Object> entry : mappingsMap.entrySet()) {
+        for (Map.Entry<String, Object> entry : remappingsMap.entrySet()) {
           String source = entry.getKey();
           Object targetData = entry.getValue();
           
-          // All mappings must be arrays (even for single destinations)
+          // All remappings must be arrays (even for single destinations)
           if (!(targetData instanceof List)) {
-            LOG.error("Mapping for '" + source + "' must be an array. Found: " + targetData.getClass().getSimpleName());
+            LOG.error("Remapping for '" + source + "' must be an array. Found: " + targetData.getClass().getSimpleName());
             LOG.error("Use format: '" + source + ": [\"destination\"]' instead of '" + source + ": \"destination\"'");
             continue; // Skip this invalid mapping
           }
           
           @SuppressWarnings("unchecked")
           List<Object> targetList = (List<Object>) targetData;
-          List<String> destinations = new ArrayList<>();
+          List<String> destinationStrings = new ArrayList<>();
           
           LOG.log("Source " + source + " has " + targetList.size() + " destinations");
           
           for (Object target : targetList) {
             String targetStr = target.toString();
-            destinations.add(targetStr);
-            LOG.log("Mapping: " + source + " -> " + targetStr);
+            destinationStrings.add(targetStr);
+            LOG.log("Remapping: " + source + " -> " + targetStr);
           }
           
           // Validate wildcard mappings
-          if (!validateWildcardMapping(source, destinations)) {
+          if (!validateWildcardMapping(source, destinationStrings)) {
             LOG.error("Invalid wildcard mapping for '" + source + "' - skipping");
             continue; // Skip this invalid mapping
           }
           
-          remote.addMapping(source, destinations);
+          remappings.put(source, destinationStrings);
         }
-        
-      } else {
-        LOG.log("No mappings found or mappings not a Map");
       }
       
-      LOG.log("Successfully created remote with " + remote.getMappings().size() + " mappings");
-      return remote;
+
+      
+    } else {
+      LOG.error("YAML root is not a Map. Found: " + data.getClass().getSimpleName());
+    }
+    
+    config.setDestinations(destinations);
+    config.setRemappings(remappings);
+    LOG.log("Loaded " + destinations.size() + " destinations and " + remappings.size() + " remappings");
+    
+    // Log destinations
+    for (RemapperConfig.Destination destination : destinations) {
+      LOG.log("destination: " + destination.getName() + " -> " + destination.getIp() + ":" + destination.getPort());
+    }
+    
+    // Log final remappings (after loop filtering)
+    for (Map.Entry<String, List<String>> mapping : config.getRemappings().entrySet()) {
+      String source = mapping.getKey();
+      List<String> destinationPaths = mapping.getValue();
+      if (destinationPaths.size() == 1) {
+        LOG.log("remapping: " + source + " -> " + destinationPaths.get(0));
+      } else {
+        LOG.log("remapping: " + source + " -> " + destinationPaths);
+      }
+    }
+
+    return config;
+  }
+  
+  /**
+   * Parse a single destination configuration from YAML map
+   */
+  private static RemapperConfig.Destination parseDestination(Map<String, Object> destinationMap) {
+    try {
+      LOG.log("Parsing destination: " + destinationMap.keySet());
+      RemapperConfig.Destination destination = new RemapperConfig.Destination();
+      
+      // Set basic properties
+      String name = getString(destinationMap, "name", "Unknown");
+      String ip = getString(destinationMap, "ip", "127.0.0.1");
+      int port = getInt(destinationMap, "port", 7000);
+      String filter = getString(destinationMap, "filter", null);
+      
+      // Validate that filter is mandatory
+      if (filter == null || filter.trim().isEmpty()) {
+        LOG.error("Filter is mandatory but missing for destination: " + name);
+        LOG.error("Each destination must have a 'filter' field specifying the OSC prefix");
+        return null;
+      }
+      
+      destination.setName(name);
+      destination.setIp(ip);
+      destination.setPort(port);
+      destination.setFilter(filter);
+      
+      LOG.log("Destination properties: name=" + name + ", ip=" + ip + ", port=" + port + ", filter=" + filter);
+      
+      return destination;
       
     } catch (Exception e) {
-      LOG.error(e, "Failed to parse remote configuration: " + e.getMessage());
+      LOG.error(e, "Failed to parse destination configuration: " + e.getMessage());
       return null;
     }
   }
+  
+
   
   /**
    * Get string value from map with default
@@ -233,17 +241,22 @@ public class ConfigLoader {
     LOG.log("Creating default OSC Remapper configuration");
     
     RemapperConfig config = new RemapperConfig();
-    List<RemapperConfig.Remote> remotes = new ArrayList<>();
     
-    // Create a default remote for testing
-    RemapperConfig.Remote testRemote = new RemapperConfig.Remote();
-    testRemote.setName("Failed to load config");
-    testRemote.setIp("127.0.0.1");
-    testRemote.setPort(7000);
-    testRemote.getMappings().put("/", List.of("/failed/to/load/config"));
+    // Create default destination with mandatory filter
+    List<RemapperConfig.Destination> destinations = new ArrayList<>();
+    RemapperConfig.Destination testDestination = new RemapperConfig.Destination();
+    testDestination.setName("Failed to load config");
+    testDestination.setIp("127.0.0.1");
+    testDestination.setPort(7000);
+    testDestination.setFilter("/failed");  // Mandatory filter
+    destinations.add(testDestination);
     
-    remotes.add(testRemote);
-    config.setRemotes(remotes);
+    // Create default remapping
+    Map<String, List<String>> remappings = new HashMap<>();
+    remappings.put("/lx/failed", List.of("/failed/to/load/config"));
+    
+    config.setDestinations(destinations);
+    config.setRemappings(remappings);
     
     return config;
   }

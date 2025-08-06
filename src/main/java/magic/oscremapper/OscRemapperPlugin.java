@@ -16,6 +16,7 @@ import heronarts.lx.osc.OscPacket;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,12 +61,12 @@ public class OscRemapperPlugin implements LXStudio.Plugin {
   public OscRemapperPlugin(LX lx, Path configPath) {
     this.lx = lx;
     this.configPath = configPath;
-    LOG.log("OscRemapperPlugin(LX) constructor called - version: " + loadVersion());
-    LOG.log("Using config path: " + configPath);
+    LOG.startup("OscRemapperPlugin(LX) constructor called - version: " + loadVersion());
+    LOG.startup("Using config path: " + configPath);
     
     // Load configuration from YAML file
     this.config = ConfigLoader.loadConfig(configPath);
-    LOG.log("Loaded configuration with " + this.config.getRemotes().size() + " remotes");
+    LOG.startup("Loaded configuration with " + this.config.getDestinations().size() + " destinations and " + this.config.getRemappings().size() + " remappings");
     
     // Set up transmission listener for OSC remapping
     this.transmissionListener = new OscRemapperTransmissionListener();
@@ -135,25 +136,19 @@ public class OscRemapperPlugin implements LXStudio.Plugin {
           OscMessage message = (OscMessage) packet;
           String originalAddress = message.getAddressPattern().getValue();
           
-          // Process each configured remote
-          for (RemapperConfig.Remote remote : config.getRemotes()) {
-            // Skip passthrough remotes - let OSC output filters handle them naturally
-            if (remote.isPassthrough()) {
-              continue; // OSC output filter will route these messages automatically
-            }
+          // Check if this address matches any global remapping
+          if (shouldRemapAddress(originalAddress)) {
+            LOG.log("🔍 Processing OSC message: " + originalAddress);
+            // Get all remapped addresses from global remappings
+            List<String> remappedAddresses = getRemappedAddresses(originalAddress);
+            LOG.log("📍 Found " + remappedAddresses.size() + " remapped addresses: " + remappedAddresses);
             
-            // Check if this remote should handle this address
-            if (remote.shouldHandleAddress(originalAddress)) {
-              // Get the remapped addresses (can be multiple destinations)
-              List<String> remappedAddresses = remote.remapAddress(originalAddress);
-              
-              // Send the remapped message to each destination
-              for (String remappedAddress : remappedAddresses) {
-                try {
-                  sendRemappedMessage(message, originalAddress, remappedAddress, remote.getName());
-                } catch (Exception e) {
-                  LOG.error(e, "Failed to send remapped message to " + remappedAddress + " for " + remote.getName());
-                }
+            // Send each remapped message (LX OSC outputs will route based on filters)
+            for (String remappedAddress : remappedAddresses) {
+              try {
+                sendRemappedMessage(message, originalAddress, remappedAddress);
+              } catch (Exception e) {
+                LOG.error(e, "Failed to send remapped message: " + originalAddress + " → " + remappedAddress);
               }
             }
           }
@@ -164,17 +159,83 @@ public class OscRemapperPlugin implements LXStudio.Plugin {
     }
     
     /**
+     * Check if an address should be remapped based on global remapping rules
+     */
+    private boolean shouldRemapAddress(String oscAddress) {
+      Map<String, List<String>> globalRemappings = config.getRemappings();
+      for (String sourcePattern : globalRemappings.keySet()) {
+        if (matchesPattern(oscAddress, sourcePattern)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    
+    /**
+     * Get all remapped addresses for a given source address
+     */
+    private List<String> getRemappedAddresses(String oscAddress) {
+      List<String> results = new ArrayList<>();
+      Map<String, List<String>> globalRemappings = config.getRemappings();
+      
+      // Try exact match first
+      List<String> exactMatches = globalRemappings.get(oscAddress);
+      if (exactMatches != null) {
+        results.addAll(exactMatches);
+      }
+
+      // Also try prefix matching (don't return early from exact match)
+      for (Map.Entry<String, List<String>> entry : globalRemappings.entrySet()) {
+        String sourcePattern = entry.getKey();
+        List<String> targetPatterns = entry.getValue();
+        
+        if (sourcePattern.endsWith("/*")) {
+          String sourcePrefix = sourcePattern.substring(0, sourcePattern.length() - 2);
+          
+          if (oscAddress.startsWith(sourcePrefix + "/")) {
+            for (String targetPattern : targetPatterns) {
+              if (targetPattern.endsWith("/*")) {
+                String targetPrefix = targetPattern.substring(0, targetPattern.length() - 2);
+                results.add(targetPrefix + oscAddress.substring(sourcePrefix.length()));
+              } else {
+                results.add(targetPattern);
+              }
+            }
+          }
+        }
+      }
+
+      return results;
+    }
+    
+    /**
+     * Check if an OSC address matches a pattern (supporting /* wildcards)
+     */
+    private boolean matchesPattern(String address, String pattern) {
+      if (pattern.equals(address)) {
+        return true;  // Exact match
+      }
+      
+      if (pattern.endsWith("/*")) {
+        String prefix = pattern.substring(0, pattern.length() - 2);
+        return address.startsWith(prefix + "/");
+      }
+      
+      return false;
+    }
+    
+    /**
      * Send a remapped OSC message through the LX engine (assuming all values are floats)
      */
     private void sendRemappedMessage(OscMessage originalMessage, String originalAddress, 
-                                   String remappedAddress, String remoteName) {
+                                   String remappedAddress) {
       try {
         // Send the remapped message - LX engine will route it to appropriate outputs based on filters
         float value = (originalMessage.size() > 0) ? originalMessage.getFloat(0) : 0.0f;
         lx.engine.osc.sendMessage(remappedAddress, value);
-        LOG.log("[" + remoteName + "] " + originalAddress + " → " + remappedAddress + " (" + value + ")");
+        LOG.log(originalAddress + " → " + remappedAddress + " (" + value + ")");
       } catch (Exception e) {
-        LOG.error(e, "Failed to send remapped message to " + remoteName + ": " + e.getMessage());
+        LOG.error(e, "Failed to send remapped message");
       }
     }
   }
@@ -190,26 +251,26 @@ public class OscRemapperPlugin implements LXStudio.Plugin {
    * Set up OSC outputs for all configured remotes
    */
   private void runSetup() {
-    LOG.log("[OscRemapper] Setting up OSC outputs for " + config.getRemotes().size() + " remotes");
+    LOG.log("[OscRemapper] Setting up OSC outputs for " + config.getDestinations().size() + " destinations");
     
     // Clear existing outputs
     remoteOutputs.clear();
     
-    // Create or find OSC output for each configured remote
-    for (RemapperConfig.Remote remote : config.getRemotes()) {
+    // Create or find OSC output for each configured destination
+    for (RemapperConfig.Destination destination : config.getDestinations()) {
       try {
-        LXOscConnection.Output output = confirmOscOutput(this.lx, remote.getName(), 
-          remote.getIp(), remote.getPort(), remote.calculateFilterPrefix());
+        LXOscConnection.Output output = confirmOscOutput(this.lx, destination.getName(), 
+          destination.getIp(), destination.getPort(), destination.getFilter());
         
         if (output != null) {
-          remoteOutputs.put(remote.getName(), output);
-          LOG.log("[OscRemapper] ✅ " + remote.getName() + " → " + remote.getIp() + ":" + 
-            remote.getPort() + " (filter: " + remote.calculateFilterPrefix() + ")");
+          remoteOutputs.put(destination.getName(), output);
+          LOG.log("[OscRemapper] ✅ " + destination.getName() + " → " + destination.getIp() + ":" + 
+            destination.getPort() + " (filter: " + destination.getFilter() + ")");
         } else {
-          LOG.error("Failed to create OSC output for remote: " + remote.getName());
+          LOG.error("Failed to create OSC output for destination: " + destination.getName());
         }
       } catch (Exception e) {
-        LOG.error(e, "Error setting up remote: " + remote.getName());
+        LOG.error(e, "Error setting up destination: " + destination.getName());
       }
     }
     
@@ -244,7 +305,7 @@ public class OscRemapperPlugin implements LXStudio.Plugin {
       
       // Reload configuration
       this.config = ConfigLoader.loadConfig(configPath);
-      LOG.log("✅ Reloaded configuration with " + this.config.getRemotes().size() + " remotes");
+      LOG.log("✅ Reloaded configuration with " + this.config.getDestinations().size() + " destinations and " + this.config.getRemappings().size() + " remappings");
       
       // Re-setup outputs
       runSetup();
@@ -262,16 +323,16 @@ public class OscRemapperPlugin implements LXStudio.Plugin {
   }
   
   /**
-   * Create or find a dedicated OSC output for remapped messages (following Beyond plugin pattern)
+   * Create or find a dedicated OSC output for remapped messages
    */
-  public static LXOscConnection.Output confirmOscOutput(LX lx, String remoteName, String host, int port, String filter) {
+  public static LXOscConnection.Output confirmOscOutput(LX lx, String destinationName, String host, int port, String filter) {
     // Check if we already have an output with this exact configuration
     for (LXOscConnection.Output output : lx.engine.osc.outputs) {
       if (output.hasFilter.isOn() && 
           filter.equals(output.filter.getString()) &&
           host.equals(output.host.getString()) &&
           port == output.port.getValuei()) {
-        LOG.log("Found existing OSC output for " + remoteName + ": " + host + ":" + port);
+        LOG.log("Found existing OSC output for " + destinationName + ": " + host + ":" + port);
         return output;
       }
     }
@@ -287,9 +348,9 @@ public class OscRemapperPlugin implements LXStudio.Plugin {
     
     try {
       oscOutput.active.setValue(true);
-      LOG.log("Created new OSC output for " + remoteName + ": " + host + ":" + port + " (filter: " + filter + ")");
+      LOG.log("Created new OSC output for " + destinationName + ": " + host + ":" + port + " (filter: " + filter + ")");
     } catch (Exception e) {
-      LOG.error(e, "Failed to activate OSC output for " + remoteName + ". Check IP and port.");
+      LOG.error(e, "Failed to activate OSC output for " + destinationName + ". Check IP and port.");
       return null;
     }
     
