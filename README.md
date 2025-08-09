@@ -23,8 +23,11 @@ OSC Remapping allows you to:
 
 Assuming the `LX-OscRemapper` and `LXStudio-TE` are cloned in `~/workspace/{LX-OscRemapper | LXStudio-TE}`
 ```bash
-cd /Users/sinas/workspace/LX && mvn compile && mvn install -DskipTests # if LX engine was changed
+# this step only needed if LX engine was changed
+cd ~/workspace/LX && mvn compile && mvn install -DskipTests 
+
 cd ~/workspace/LX-OscRemapper && mvn compile && mvn install -DskipTests
+
 cd ~/workspace/LXStudio-TE/te-app && mvn package -DskipTests
 
 cd ~/workspace/LXStudio-TE/te-app && LOG_FILE="../.agent_logs/te_app_logs_$(date +%Y%m%d_%H%M%S).log" && echo "🎯 Testing Fix - Logs: $LOG_FILE" && java -ea -XstartOnFirstThread -Djava.awt.headless=true -Dgpu -jar target/te-app-0.3.0-SNAPSHOT-jar-with-dependencies.jar --resolution 1920x1200 &> "$LOG_FILE"
@@ -50,30 +53,70 @@ cd ~/workspace/LXStudio-TE/te-app && LOG_FILE="../.agent_logs/te_app_logs_$(date
 The plugin uses `LXStudio-TE/te-app/resources/osc_remapper/remapper_config.yaml`:
 
 ```yaml
-remotes:
-  - name: "resolume"
-    host: "127.0.0.1"
+# OSC Remapper Configuration
+# This file defines OSC destinations and remapping rules for TE/Chromatik
+
+# Configuration is split into two sections:
+# 1. OSC destinations: Network endpoints for sending OSC messages
+# 2. OSC remappings: Global remapping rules applied to all destinations
+
+# ================================
+# 1. OSC DESTINATIONS
+# ================================
+# Each destination defines where to send OSC messages.
+# - name: Unique identifier for this destination
+# - ip: Target IP address
+# - port: Target port number  
+# - filter: MANDATORY OSC filter prefix for routing messages to this destination
+
+destinations:
+  - name: "Resolume Mapped"
+    ip: "127.0.0.1"
     port: 7000
-    mappings:
-      "/lx/tempo/beat":
-        - "/composition/tempo/resync"
-        - "/composition/layer/1/tempo/resync"
-      "/lx/tempo/trigger":
-        - "/composition/layer/1/tempo/trigger"
+    filter: "/composition"
 
-  - name: "mothership"
-    host: "192.168.1.100" 
-    port: 8000
-    mappings:
-      "/lx/brightness":
-        - "/mship/brightness"
+  - name: "TouchDesigner Raw LX"
+    ip: "127.0.0.1"
+    port: 7891
+    filter: "/lx"
 
-  - name: "passthrough-example"
-    host: "127.0.0.1"
-    port: 9000
-    mappings:
-      "/lx/tempo/*":
-        - "/lx/tempo/*"  # Identity mapping (passthrough)
+  - name: "MSHIP"
+    ip: "127.0.0.1"
+    port: 7002
+    filter: "/mship"
+
+  - name: "MSHIP-Identity"
+    ip: "127.0.0.1"
+    port: 7003
+    filter: "/lx"
+
+# ================================
+# 2. OSC REMAPPINGS
+# ================================
+# Global remapping rules applied to OSC messages.
+# These define how OSC addresses are transformed before sending to destinations.
+# 
+# Two types of mappings supported:
+# 1. Exact mapping: "/lx/tempo/beat" -> ["/composition/tempo/resync"]
+# 2. Wildcard mapping: "/lx/tempo/*" -> ["/remote/tempo/*"]
+#
+# Each source can map to multiple destinations (1-to-many mapping)
+# Identity mappings (same source and destination) create passthrough routing
+
+remappings:
+  # Tempo and beat sync - single source can map to multiple destinations
+  "/lx/tempo/beat":
+    - "/composition/tempo/resync"
+    - "/composition/layer/1/tempo/resync"
+    - "/lx/mship/layer/1/tempo/beat"
+
+  "/lx/tempo/trigger":
+    - "/composition/layer/1/tempo/trigger"
+    - "/lx/tempo/trigger"  # Identity mapping: preserves original for MSHIP-Identity
+
+  # Wildcard mappings for MSHIP
+  "/lx/tempo/*":
+    - "/mship/wildcard/*"
 ```
 
 ### Configuration Explained
@@ -99,6 +142,11 @@ When `/lx/tempo/beat` is transmitted, all three destinations receive the message
 ## Rerouting Without Renaming
 
 ### Passthrough Mappings
+
+<!-- 
+TODO(look): pretty sure this section is unnecessary
+-->
+
 For scenarios where you want to route messages without changing addresses:
 
 ```yaml
